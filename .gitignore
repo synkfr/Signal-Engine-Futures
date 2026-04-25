@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+trade_history.db
+*.log
+.DS_Store
+package-lock.json
