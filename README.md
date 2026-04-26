@@ -1,51 +1,57 @@
-# 🚀 SignalEngine — Autonomous Crypto Futures Trading Bot
+# 🚀 SignalEngine v2 — SLC-Only Crypto Futures Trading Bot
 
-An autonomous crypto futures trading bot powered by the **SLC Execution Blueprint** (Structure → Level → Confirmation). Dual-engine architecture monitors both **Binance Futures** (via WebSocket) and **CoinSwitch Pro Futures** (via Polling) simultaneously, delivering real-time signals to Discord.
+An autonomous crypto futures trading bot powered by the **SLC Execution Blueprint** (Structure → Level → Confirmation). Monitors **Binance Futures** via WebSocket, delivering real-time signals to Discord with self-improving ML filtering.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   index.ts                       │
-│         (Dual Engine Bootstrapper)               │
-├─────────────────┬───────────────────────────────┤
-│  CoinSwitch Engine (Polling)  │  Binance Engine (WebSocket)  │
-│  ↓ Every 15m poll cycle       │  ↓ Zero-delay candle close   │
-├─────────────────┴───────────────────────────────┤
-│                 SignalEngine                      │
+┌──────────────────────────────────────────────────┐
+│                   index.ts                        │
+│         (Binance Engine Bootstrap)                │
+├──────────────────────────────────────────────────┤
+│              BinanceProvider (WebSocket)           │
+│              ↓ Zero-delay candle close             │
+├──────────────────────────────────────────────────┤
+│                 SignalEngine v2                    │
 │  ┌──────────────────────────────────────────┐    │
-│  │  1. SLC Strategy (Primary)               │    │
+│  │  SLC Strategy (ONLY strategy)            │    │
 │  │     ├─ Stage 1: 4H Structure (EMA 21/50) │    │
 │  │     ├─ Stage 2: 15m Supply/Demand Zones  │    │
 │  │     └─ Stage 3: Stochastic (5,3,3)       │    │
 │  ├──────────────────────────────────────────┤    │
-│  │  2. Price Action Analyzer (Fallback)      │    │
-│  │     ├─ Engulfing, Pin Bars, Marubozu     │    │
-│  │     └─ 4H Structure gate (anti-conflict) │    │
-│  ├──────────────────────────────────────────┤    │
-│  │  3. ML Filter (Self-Improvement Brain)    │    │
-│  │     └─ SQLite pattern win-rate tracking   │    │
+│  │  ML Filter (Multi-Dimensional Brain)      │    │
+│  │     ├─ Pattern win-rate (base)            │    │
+│  │     ├─ Volume confidence (+/- bonus)      │    │
+│  │     ├─ Session performance (time-of-day)  │    │
+│  │     └─ Loss streak protection             │    │
 │  └──────────────────────────────────────────┘    │
-│            ↓                                     │
-│  VirtualTradeTracker (SL/TP/Trailing Management) │
-│            ↓                                     │
-│  Discord Notifier (Signals / Trades / Results)   │
-└─────────────────────────────────────────────────┘
+│            ↓                                      │
+│  TradeTracker (SL/TP/Breakeven/Trailing/MFE/MAE)  │
+│            ↓                                      │
+│  ┌─ DatabaseManager (SQLite) ─────────────────┐  │
+│  │  active_trades → crash recovery             │  │
+│  │  virtual_trades → ML learning data          │  │
+│  └─────────────────────────────────────────────┘  │
+│            ↓                                      │
+│  Discord Notifier (Signals / Trades / Results)    │
+│            ↓                                      │
+│  OrderExecutor (Binance Testnet Demo Trading)     │
+└──────────────────────────────────────────────────┘
 ```
 
 ## Features
 
-- **SLC Blueprint Strategy** — 3-stage mechanical system based on "Structure → Level → Confirmation"
-- **Dual-Engine** — CoinSwitch (polling) + Binance (WebSocket) running simultaneously with separate learning brains
-- **Multi-Timeframe Analysis** — 4H macro trend + 15m precision entries
-- **Volume-Weighted Zones** — Supply/Demand zones scored by volume (institutional footprint detection)
-- **Backtesting Engine** — Replay 3-6 months of historical data through SLC before risking capital
-- **Demo Trading** — Place real orders on Binance Testnet using fake USDT (zero risk)
-- **Self-Improving ML Filter** — Tracks every virtual trade in SQLite; auto-blacklists setups below 50% win rate after 20 samples
-- **Virtual Trade Tracker** — Full lifecycle management: Entry → Breakeven SL → ATR Trailing → Close
-- **Risk Management** — Max 3 concurrent trades, zone-based SL, strict 1:2 R:R
-- **Rich Discord Embeds** — Professional signals with emoji indicators, section dividers, and trade lifecycle tracking
-- **Binance Futures Data** — Open Interest, Funding Rate, real-time WebSocket klines
+- **SLC-Only Strategy** — 3-stage mechanical system (Structure → Level → Confirmation). No fallback strategies.
+- **50 Symbols** — Monitors top 50 Binance Futures pairs by volume
+- **Multi-Timeframe** — 4H macro trend + 15m precision entries
+- **Volume-Weighted Zones** — Supply/Demand scored by institutional volume (🔥 = 1.5x+ avg)
+- **Crash Recovery** — Active trades persist in SQLite; recovers on restart
+- **Self-Improving ML** — 4-factor scoring: pattern win rate, volume confidence, session performance, streak protection
+- **MFE/MAE Tracking** — Records best and worst unrealized PnL per trade (answers "should I take partial profits?")
+- **Demo Trading** — Real orders on Binance Testnet (fake USDT, zero risk)
+- **ATR Trailing Stops** — Auto-tightens SL using 1.5x ATR after breakeven
+- **Graceful Shutdown** — SIGINT/SIGTERM saves state before exit
+- **Exponential Reconnect** — WebSocket reconnection with backoff (5s → 60s max)
 
 ## Tech Stack
 
@@ -53,36 +59,32 @@ An autonomous crypto futures trading bot powered by the **SLC Execution Blueprin
 |-----------|------------|
 | Language | TypeScript (ESNext) |
 | Runtime | Node.js 20+ |
-| Database | SQLite (via `sqlite3`) |
+| Database | SQLite (WAL mode) |
 | Indicators | `technicalindicators` (EMA, ADX, ATR, Stochastic) |
 | WebSocket | `ws` library |
 | HTTP | `axios` |
-| Crypto Auth | `tweetnacl` (CoinSwitch Ed25519 signing) |
 | Notifications | Discord Webhooks |
 
 ## Project Structure
 
 ```
 src/
-├── index.ts                    # Entry point — dual engine bootup
+├── index.ts                    # Entry point — Binance-only bootstrap
 ├── backtest.ts                 # CLI backtesting entry point
 ├── engines/
-│   ├── SignalEngine.ts         # Core analysis loop + SLC orchestration
+│   ├── SignalEngine.ts         # Core SLC orchestration + trade lifecycle
 │   └── BacktestEngine.ts       # Historical data replay + statistics
 ├── strategies/
 │   └── SLCStrategy.ts          # SLC Blueprint (Structure/Level/Confirmation)
 ├── providers/
-│   ├── MarketProvider.ts       # OHLCV interface contract
-│   ├── BinanceProvider.ts      # Binance Futures WebSocket + REST
-│   └── CoinSwitchProvider.ts   # CoinSwitch Pro Futures (Ed25519 auth)
+│   ├── MarketProvider.ts       # OHLCV interface
+│   └── BinanceProvider.ts      # Binance Futures WebSocket + REST
 ├── services/
-│   ├── PriceActionAnalyzer.ts  # Candlestick pattern recognition (fallback)
-│   ├── MarketAnalyzer.ts       # ADX/ATR regime detection (fallback only)
-│   ├── MLAnalyzer.ts           # Win-rate based pattern filter
-│   ├── DatabaseManager.ts      # SQLite trade history logging
-│   ├── VirtualTradeTracker.ts  # SL/TP/Trailing trade management
-│   ├── OrderExecutor.ts        # Binance Futures testnet order placement
-│   ├── SymbolService.ts        # Top volume symbol discovery
+│   ├── MLAnalyzer.ts           # Multi-dimensional ML signal filter
+│   ├── DatabaseManager.ts      # SQLite (trade history + crash recovery)
+│   ├── VirtualTradeTracker.ts  # SL/TP/Trailing/MFE/MAE management
+│   ├── OrderExecutor.ts        # Binance testnet order placement
+│   ├── SymbolService.ts        # Top-50 volume symbol discovery
 │   ├── CurrencyService.ts      # USDT formatting
 │   └── DiscordNotifier.ts      # Discord webhook sender
 ```
@@ -97,24 +99,21 @@ npm install
 
 ### 2. Configure Environment
 
-Copy `.env.example` to `.env` and fill in your keys:
+Create a `.env` file:
 
 ```env
-# CoinSwitch Pro API (Required)
-COINSWITCH_API_KEY=your_key
-COINSWITCH_SECRET_KEY=your_secret_hex
+# Binance Futures API
+BINANCE_API_KEY=your_testnet_api_key
+BINANCE_SECRET_KEY=your_testnet_secret_key
+BINANCE_TESTNET=true                  # Use testnet (demo)
 
-# Binance Futures API (Optional — public data works without keys)
-BINANCE_API_KEY=your_key
-BINANCE_SECRET_KEY=your_secret
-BINANCE_TESTNET=true              # Set to 'true' for paper trading
+# Demo Trading
+ENABLE_TESTNET_ORDERS=true            # Place real orders with fake money
 
-# Discord Webhooks — CoinSwitch Channels
-DISCORD_SIGNALS_WEBHOOK_URL=https://discord.com/api/webhooks/...
-DISCORD_TRADES_WEBHOOK_URL=https://discord.com/api/webhooks/...
-DISCORD_RESULTS_WEBHOOK_URL=https://discord.com/api/webhooks/...
+# Symbol Count (default: 50)
+SYMBOL_COUNT=50
 
-# Discord Webhooks — Binance Channels
+# Discord Webhooks
 BINANCE_SIGNALS_WEBHOOK_URL=https://discord.com/api/webhooks/...
 BINANCE_TRADES_WEBHOOK_URL=https://discord.com/api/webhooks/...
 BINANCE_RESULTS_WEBHOOK_URL=https://discord.com/api/webhooks/...
@@ -123,49 +122,41 @@ BINANCE_RESULTS_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ### 3. Build & Run
 
 ```bash
-# Compile TypeScript
-npx tsc
-
-# Run the bot (live signal monitoring)
-node dist/index.js
+npx tsc && node dist/index.js
 ```
 
 ## Backtesting
 
-Before trusting the bot with real signals, validate the SLC strategy against historical data.
+Validate the SLC strategy against historical data before trusting signals.
 
-### Single Symbol Test
+### Single Symbol
 
 ```bash
-# Backtest BTCUSDT over 3 months
-npx tsc && node dist/backtest.js BTCUSDT 3
-
-# Backtest DOGEUSDT over 6 months  
-node dist/backtest.js DOGEUSDT 6
+npx tsc && node dist/backtest.js BTCUSDT 3    # 3-month backtest
+node dist/backtest.js ETHUSDT 6               # 6-month backtest
 ```
 
-### Multi-Symbol Batch Test
+### Multi-Symbol Batch
 
 ```bash
-# Test 8 symbols at once (BTC, XRP, DOGE, ADA, BNB, SOL, AVAX, LINK)
-node dist/backtest.js --multi 3
+node dist/backtest.js --multi 3    # Test 8 symbols over 3 months
 ```
 
 ### Reading Results
 
 ```
 =======================================================
-  📊 BACKTEST REPORT: DOGEUSDT
+  📊 BACKTEST REPORT: BTCUSDT
 =======================================================
-  Total Trades:          3
-  Wins / Losses / BE:    2 / 1 / 0
-  Win Rate:              66.7%      ← Above 55% is good
-  Total PnL:             +0.99%
-  Avg Win:               +0.61%
-  Avg Loss:              -0.23%
-  Profit Factor:         5.35       ← Above 1.5 is profitable
-  Max Drawdown:          -0.23%     ← How much you'd lose at worst
-  Max Consec. Losses:    1
+  Total Trades:          12
+  Wins / Losses / BE:    7 / 4 / 1
+  Win Rate:              58.3%      ← Above 55% is good
+  Total PnL:             +4.21%
+  Avg Win:               +0.89%
+  Avg Loss:              -0.42%
+  Profit Factor:         3.71       ← Above 1.5 is profitable
+  Max Drawdown:          -1.23%     ← How much you'd lose at worst
+  Max Consec. Losses:    2
 =======================================================
 ```
 
@@ -176,11 +167,9 @@ node dist/backtest.js --multi 3
 | Max Drawdown | <5% | >10% |
 | Avg Win / Avg Loss | >1.5 | <1.0 |
 
-> **Note:** The SLC strategy is very selective (2-5 trades per symbol per 3 months). This is by design — it only fires when all 3 stages align.
+> **Note:** SLC is a sniper strategy. Expect 0-3 signals per day across 50 symbols. This is by design — fewer trades = higher conviction.
 
-## Demo Trading (Testnet Orders)
-
-Once backtesting looks good, enable demo trading to place real orders with **fake money** on Binance Testnet.
+## Demo Trading (Testnet)
 
 ### 1. Get Testnet API Keys
 
@@ -202,7 +191,8 @@ ENABLE_TESTNET_ORDERS=true
 
 ```bash
 npx tsc && node dist/index.js
-# Console will show: 🚀 Binance Engine Started. (Testnet Orders ENABLED)
+# Output: 🚀 SignalEngine v2 Online
+#         [Config] Orders: ✅ Demo Trading ENABLED
 ```
 
 ### Safety Architecture
@@ -212,48 +202,64 @@ ENABLE_TESTNET_ORDERS=true + BINANCE_TESTNET=true
 → ✅ Demo orders with fake USDT (safe)
 
 ENABLE_TESTNET_ORDERS=true + BINANCE_TESTNET=false  
-→ 🛑 BLOCKED (requires hidden ENABLE_LIVE_ORDERS=true)
+→ 🛑 BLOCKED (requires ENABLE_LIVE_ORDERS=true)
 
 ENABLE_TESTNET_ORDERS not set
 → Signals only, no orders placed
 ```
 
-## How to Train the Bot
+## How the Bot Learns
 
-The bot uses a **self-improving feedback loop**. Here's how to train it properly:
+The bot uses a **self-improving feedback loop** with 4-factor ML scoring:
 
 ### Phase 1: Data Collection (First 1-3 Days)
-When the bot first starts, it has no historical data. During this phase:
-- The ML Filter **approves all signals** (it needs 20+ trades per pattern before filtering)
-- Virtual trades are opened, tracked, and closed automatically
-- Every trade outcome (WIN/LOSS/BREAKEVEN) is logged to `trade_history.db`
-- **Do NOT intervene** — let it collect data naturally
+- ML Filter approves all signals (needs 20+ trades per pattern)
+- Every trade is logged with rich metadata: zone strength, volume score, stochastic values, session, MFE/MAE
+- **Let it run undisturbed** — it's building its knowledge base
 
-### Phase 2: Pattern Learning (After ~100 Virtual Trades)
-After accumulating enough data per pattern+exchange combination:
-- The ML Filter starts checking win rates
-- Patterns with <50% win rate are **auto-blacklisted**
-- Each exchange has its own "brain" (Binance patterns don't pollute CoinSwitch stats)
-- The bot gets progressively more selective over time
+### Phase 2: Pattern Learning (After ~100 Trades)
+The ML brain starts making decisions based on:
 
-### Phase 3: Ongoing Self-Improvement
-- The bot continuously logs every trade outcome
-- As market conditions change, patterns that stop working get filtered out
-- New patterns that start working get approved
-- **The more it runs, the smarter it gets**
+| Factor | What It Does |
+|--------|-------------|
+| **Pattern Win Rate** | Base approval check (>50%) |
+| **Volume Confidence** | Zones with 1.5x+ avg volume get a 5% threshold reduction (more permissive) |
+| **Session Performance** | Auto-penalizes time-of-day windows with historically bad results |
+| **Streak Protection** | After 3+ consecutive losses, temporarily raises approval threshold |
+
+### Phase 3: Continuous Improvement
+- Every trade result updates the ML brain
+- Bad patterns get filtered out automatically
+- Good sessions get rewarded
+- The approval threshold dynamically adjusts per signal
 
 ### Training Tips
-1. **Run 24/7 for at least 1 week** before trusting signals for real money
-2. **Don't restart the database** — `trade_history.db` is the bot's memory
-3. **Monitor Discord** — check if SLC signals outperform PA fallback signals
-4. **Adjust `MIN_TRADES_FOR_LEARNING`** in `MLAnalyzer.ts` (default: 20) if you want faster/slower filtering
-5. **Adjust `MIN_WIN_RATE`** (default: 50%) to be more/less aggressive
+1. **Run 24/7 for at least 1 week** before trusting results
+2. **Never delete `trade_history.db`** — it's the bot's memory
+3. **Check `maxFavorable` column** — if trades consistently hit +1.5R before reverting, consider adding partial TP
+4. Query the database to see ML insights:
+   ```bash
+   sqlite3 trade_history.db "SELECT timeOfDay, COUNT(*), 
+     ROUND(AVG(CASE WHEN outcome='WIN' THEN 1.0 ELSE 0.0 END)*100,1) as win_rate 
+     FROM virtual_trades GROUP BY timeOfDay"
+   ```
 
-## Hosting Requirements
+## Crash Recovery
+
+If the bot crashes or restarts while trades are active:
+
+1. **Active trades are persisted to SQLite** (`active_trades` table)
+2. On restart, the bot loads them back into memory
+3. SL/TP/trailing management resumes immediately
+4. Discord notification: "🔄 Recovered N active trades from last session"
+
+> **Note:** If price blew through SL/TP while the bot was offline, the trade closes at the first available price. For demo trading, Binance testnet SL/TP orders handle this automatically.
+
+## Hosting
 
 ### Recommended: VPS (Virtual Private Server)
 
-The bot needs to run **24/7 with a stable internet connection** to not miss WebSocket candle closes. A VPS is the correct choice.
+The bot needs **24/7 uptime** with stable internet for WebSocket connections.
 
 | Spec | Minimum | Recommended |
 |------|---------|-------------|
@@ -262,84 +268,60 @@ The bot needs to run **24/7 with a stable internet connection** to not miss WebS
 | **Storage** | 1 GB SSD | 5 GB SSD |
 | **OS** | Ubuntu 22.04+ | Ubuntu 24.04 LTS |
 | **Node.js** | v20+ | v22 LTS |
-| **Network** | Stable low-latency | <50ms to Binance |
 
-### Recommended VPS Providers
+### VPS Providers
 
 | Provider | Plan | ~Cost/Month |
 |----------|------|-------------|
 | **Hetzner** (Best Value) | CX22 | ~€4/mo (~₹380) |
+| **Oracle Cloud** | Free Tier (ARM) | **Free forever** |
 | **Contabo** | VPS S | ~€6/mo (~₹570) |
 | **DigitalOcean** | Basic Droplet | $6/mo (~₹500) |
-| **AWS Lightsail** | Nano | $5/mo (~₹420) |
-| **Oracle Cloud** | Free Tier (ARM) | **Free forever** |
 
-### VPS Setup
+### VPS Deploy
 
 ```bash
-# 1. SSH into your VPS
+# 1. SSH into VPS
 ssh root@your-vps-ip
 
-# 2. Install Node.js 22
+# 2. Install Node.js
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# 3. Clone your repo
+# 3. Clone & Setup
 git clone https://github.com/your-user/SignalEngine.git
-cd SignalEngine
+cd SignalEngine && npm install && npx tsc
 
-# 4. Install dependencies & build
-npm install
-npx tsc
+# 4. Configure
+cp .env.example .env && nano .env
 
-# 5. Create your .env file
-cp .env.example .env
-nano .env  # Fill in your keys
-
-# 6. Run with PM2 (auto-restart on crash)
+# 5. Run with PM2 (auto-restart)
 npm install -g pm2
 pm2 start dist/index.js --name signal-engine
-pm2 save
-pm2 startup  # Auto-start on VPS reboot
+pm2 save && pm2 startup
 ```
 
-### Why NOT a Local PC?
-- Your PC goes to sleep / restarts → missed signals
-- Your WiFi drops → WebSocket disconnects
-- Your IP changes → potential API issues
-- A VPS runs 24/7 with 99.9% uptime in a data center
-
-### Why NOT Serverless (Lambda/Vercel)?
-- WebSocket connections need persistent processes
-- Cold starts add latency to candle close events
-- SQLite needs a filesystem (serverless is ephemeral)
-
-## Environment Variables Reference
+## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `COINSWITCH_API_KEY` | ✅ | CoinSwitch Pro API key |
-| `COINSWITCH_SECRET_KEY` | ✅ | CoinSwitch Pro secret (hex) |
-| `BINANCE_API_KEY` | ❌ | Binance Futures API key |
-| `BINANCE_SECRET_KEY` | ❌ | Binance Futures secret |
-| `BINANCE_TESTNET` | ❌ | `true` for paper trading |
-| `ENABLE_TESTNET_ORDERS` | ❌ | `true` to place demo orders on testnet |
-| `DISCORD_SIGNALS_WEBHOOK_URL` | ❌ | CoinSwitch signals channel |
-| `DISCORD_TRADES_WEBHOOK_URL` | ❌ | CoinSwitch trades channel |
-| `DISCORD_RESULTS_WEBHOOK_URL` | ❌ | CoinSwitch results channel |
-| `BINANCE_SIGNALS_WEBHOOK_URL` | ❌ | Binance signals channel |
-| `BINANCE_TRADES_WEBHOOK_URL` | ❌ | Binance trades channel |
-| `BINANCE_RESULTS_WEBHOOK_URL` | ❌ | Binance results channel |
+| `BINANCE_API_KEY` | ✅ | Binance Futures API key (testnet or mainnet) |
+| `BINANCE_SECRET_KEY` | ✅ | Binance Futures secret |
+| `BINANCE_TESTNET` | ❌ | `true` for demo trading (default: false) |
+| `ENABLE_TESTNET_ORDERS` | ❌ | `true` to place orders on testnet |
+| `ENABLE_LIVE_ORDERS` | ❌ | `true` to unlock mainnet (DANGER) |
+| `SYMBOL_COUNT` | ❌ | Number of top-volume symbols to monitor (default: 50) |
+| `BINANCE_SIGNALS_WEBHOOK_URL` | ❌ | Discord signals channel |
+| `BINANCE_TRADES_WEBHOOK_URL` | ❌ | Discord trades channel |
+| `BINANCE_RESULTS_WEBHOOK_URL` | ❌ | Discord results channel |
 
 ## Discord Channels
 
-The bot uses 3 separate Discord channels per exchange:
-
-| Channel | Purpose | Embed Examples |
-|---------|---------|----------------|
-| **#signals** | New trade signals | `🎯 SLC SIGNAL — BTC/USDT` with full setup details, SLC checklist, and market data |
-| **#trades** | Trade lifecycle | `🎯 TRADE OPENED`, `🛡️ SL → BREAKEVEN`, `📈 TRAILING STOP UPDATED` |
-| **#results** | Trade outcomes | `🏆 TRADE CLOSED — WIN (+1.82%)`, `🛑 TRADE CLOSED — LOSS (-0.45%)` |
+| Channel | Purpose | Examples |
+|---------|---------|---------|
+| **#signals** | New SLC signals | `🎯 SLC SIGNAL — BTC/USDT` with checklist, market data |
+| **#trades** | Trade lifecycle | `🎯 TRADE OPENED`, `🛡️ BREAKEVEN`, `📈 TRAILING` |
+| **#results** | Outcomes | `🏆 WIN (+1.82%)`, `🛑 LOSS (-0.45%)`, `🔄 RECOVERED` |
 
 ## License
 
