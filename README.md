@@ -323,6 +323,11 @@ pm2 save && pm2 startup
 | **#trades** | Trade lifecycle | `🎯 TRADE OPENED`, `🛡️ BREAKEVEN`, `📈 TRAILING` |
 | **#results** | Outcomes | `🏆 WIN (+1.82%)`, `🛑 LOSS (-0.45%)`, `🔄 RECOVERED` |
 
+## Disclaimer
+
+**USE AT YOUR OWN RISK.**
+This software is provided "as is" and for educational/demonstration purposes only. The creator(s) and contributor(s) of this project assume no responsibility or liability for any financial losses, damages, or unintended consequences resulting from the use of this software. By using this bot, you acknowledge that cryptocurrency trading carries significant risk and you are solely responsible for any trades or decisions made.
+
 ## License
 
-Private — All Rights Reserved.
+This project is licensed under the [MIT License](LICENSE.md).
